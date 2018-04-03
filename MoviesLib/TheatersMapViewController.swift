@@ -19,11 +19,14 @@ class TheatersMapViewController: UIViewController {
     var currentElement: String!
     var theater: Theater!
     var theaters: [Theater] = []
+    lazy var locationManager = CLLocationManager()
+    var poiAnnotations: [MKPointAnnotation] = []
     
     // MARK: - Super Methods
     override func viewDidLoad() {
         super.viewDidLoad()
         loadXML()
+        requestUserLocationAutorization()
     }
     
 
@@ -42,7 +45,34 @@ class TheatersMapViewController: UIViewController {
             let annotation = TheaterAnnotation(coordinate: coordinate, title: theater.name, subtitle: theater.address)
             mapView.addAnnotation(annotation)
         }
+        mapView.showAnnotations(mapView.annotations, animated: true)
     }
+    
+    func requestUserLocationAutorization() {
+        if CLLocationManager.locationServicesEnabled() {
+            locationManager.delegate = self
+            locationManager.desiredAccuracy = kCLLocationAccuracyBest
+            //locationManager.allowsBackgroundLocationUpdates = true // Quando for rodar a localizaçãso em backgroud
+            
+            locationManager.pausesLocationUpdatesAutomatically = true // Ajuda no tempo de consumo da bateria
+            
+            
+            switch CLLocationManager.authorizationStatus() {
+                case .authorizedAlways, .authorizedWhenInUse:
+                    print("O usuário j;a autorizou o usu da localização")
+                case .denied:
+                    print("Usuário negou a autorização")
+                case .notDetermined:
+                    locationManager.requestWhenInUseAuthorization()
+            case .restricted:
+                print("SiFu!")
+                default:
+                    break
+            }
+            
+        }
+    }
+    
     
 }
 
@@ -97,3 +127,75 @@ extension TheatersMapViewController: XMLParserDelegate {
     
     
 }
+
+extension TheatersMapViewController: MKMapViewDelegate {
+    func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+        
+        var annotationView: MKAnnotationView!
+        
+        if annotation is TheaterAnnotation {
+            annotationView = mapView.dequeueReusableAnnotationView(withIdentifier: "Theater")
+            
+            if annotationView == nil {
+                annotationView = MKAnnotationView(annotation: annotation, reuseIdentifier: "Theater")
+                annotationView.image = UIImage(named: "theaterIcon")
+                annotationView.canShowCallout = true
+            } else {
+                annotationView.annotation = annotation
+            }
+            
+        }
+        
+        return annotationView
+        
+    }
+}
+
+extension TheatersMapViewController: CLLocationManagerDelegate {
+    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
+        switch status {
+        case .authorizedAlways, .authorizedWhenInUse:
+            mapView.showsUserLocation = true
+        default:
+            break
+        }
+    }
+    
+    func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+        print("Velocidade do usuário: \(userLocation.location?.speed ?? 0)")
+        
+        
+        //let region = MKCoordinateRegionMakeWithDistance(userLocation.coordinate, 500, 500)
+        //mapView.setRegion(region, animated: true)
+    }
+    
+}
+
+extension TheatersMapViewController: UISearchBarDelegate {
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        
+        let request = MKLocalSearchRequest()
+        request.naturalLanguageQuery = searchBar.text!
+        request.region = mapView.region
+        
+        let search = MKLocalSearch(request: request)
+        search.start { (response, error) in
+            if error == nil {
+                guard let response = response else {return}
+                
+                self.mapView.removeAnnotations(self.poiAnnotations)
+                
+                for item in response.mapItems {
+                    let place = MKPointAnnotation()
+                    place.coordinate = item.placemark.coordinate
+                    place.title = item.name
+                    place.subtitle = item.phoneNumber
+                    self.poiAnnotations.append(place)
+                }
+                self.mapView.addAnnotations(self.poiAnnotations)
+            }
+        }
+        
+    }
+}
+
